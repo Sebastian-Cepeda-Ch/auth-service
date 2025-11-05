@@ -1,0 +1,42 @@
+# Versión de la sintaxis de Docker Compose
+version: '3.8'
+
+services:
+  # Definición del microservicio de autenticación
+  auth-service:
+    # Construye la imagen usando el Dockerfile en el directorio ./auth-service
+    build: ./auth-service
+    container_name: auth_service_c
+    ports:
+      # Mapea el puerto 8001 del host al puerto 8000 del contenedor
+      # Usamos 8001 para evitar conflictos si tienes algo en el 8000 local
+      - "8001:8000"
+    volumes:
+      # Monta el código local en el contenedor para desarrollo (live-reload)
+      # Cualquier cambio en ./auth-service se refleja al instante
+      - ./auth-service:/app
+    environment:
+      # Pasa variables de entorno al contenedor
+      # Así, la app FastAPI puede conectarse a 'mongo-db'
+      - MONGO_URL=mongodb://mongo-db:27017/auth_db
+    # Asegura que el servicio de mongo-db se inicie antes que auth-service
+    depends_on:
+      - mongo-db
+
+  # Definición del servicio de base de datos MongoDB
+  mongo-db:
+    # Usa la imagen oficial de MongoDB
+    image: mongo:latest
+    container_name: mongo_db_c
+    ports:
+      # Mapea el puerto estándar de MongoDB
+      - "27017:27017"
+    volumes:
+      # Crea un volumen persistente para los datos de la BD
+      # Así, los datos no se pierden si el contenedor se reinicia
+      - mongo_data:/data/db
+
+# Definición de volúmenes
+volumes:
+  mongo_data:
+    driver: local
