@@ -1,42 +1,60 @@
-# Versión de la sintaxis de Docker Compose
 version: '3.8'
 
 services:
-  # Definición del microservicio de autenticación
+  
+  # --- Tu Servicio de Autenticación (Requisito 2.1) ---
   auth-service:
-    # Construye la imagen usando el Dockerfile en el directorio ./auth-service
-    build: ./auth-service
-    container_name: auth_service_c
+    build:
+      context: ./auth-service # Directorio donde está el Dockerfile
+      dockerfile: Dockerfile
     ports:
-      # Mapea el puerto 8001 del host al puerto 8000 del contenedor
-      # Usamos 8001 para evitar conflictos si tienes algo en el 8000 local
-      - "8001:8000"
-    volumes:
-      # Monta el código local en el contenedor para desarrollo (live-reload)
-      # Cualquier cambio en ./auth-service se refleja al instante
-      - ./auth-service:/app
+      # Exponemos el 8000 al host (ej: 8000:8000) solo para debug.
+      # En producción, solo NGINX necesitaría acceder a él.
+      - "8001:8000" # Mapeo el 8001 del host al 8000 del contenedor para no chocar con el 80
     environment:
-      # Pasa variables de entorno al contenedor
-      # Así, la app FastAPI puede conectarse a 'mongo-db'
-      - MONGO_URL=mongodb://mongo-db:27017/auth_db
-    # Asegura que el servicio de mongo-db se inicie antes que auth-service
+      # Pasamos variables de entorno a la aplicación
+      - DATABASE_URL=mongodb://mongo:27017/authdb
+      - SECRET_KEY=ESTA_ES_UNA_CLAVE_MUY_SECRETA_PARA_PROD_CAMBIAME
+    volumes:
+      # Montar el código para desarrollo (hot-reloading si usas --reload)
+      - ./auth-service:/app
     depends_on:
-      - mongo-db
+      - mongo # Asegura que la DB inicie primero
+    networks:
+      - microservices-net
 
-  # Definición del servicio de base de datos MongoDB
-  mongo-db:
-    # Usa la imagen oficial de MongoDB
+  # --- Base de Datos MongoDB (Requisito 2.4) ---
+  mongo:
     image: mongo:latest
-    container_name: mongo_db_c
     ports:
-      # Mapea el puerto estándar de MongoDB
+      # Exponer el puerto de Mongo al host (para conectar con MongoDB Compass, etc.)
       - "27017:27017"
     volumes:
-      # Crea un volumen persistente para los datos de la BD
-      # Así, los datos no se pierden si el contenedor se reinicia
-      - mongo_data:/data/db
+      # Persistir los datos de la base de datos
+      - mongo-data:/data/db
+    networks:
+      - microservices-net
 
-# Definición de volúmenes
+  # --- Proxy Reverso NGINX (Requisito 2.5) ---
+  nginx-proxy:
+    image: nginx:latest
+    ports:
+      # El puerto principal de entrada a toda la aplicación
+      - "80:80"
+    volumes:
+      # Montar nuestro archivo de configuración personalizado
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - auth-service # NGINX debe esperar a que el servicio de auth inicie
+    networks:
+      - microservices-net
+
+# --- Volúmenes para persistencia de datos ---
 volumes:
-  mongo_data:
+  mongo-data:
     driver: local
+
+# --- Red interna para que los contenedores se comuniquen ---
+networks:
+  microservices-net:
+    driver: bridge
