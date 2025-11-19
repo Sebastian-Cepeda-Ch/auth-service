@@ -1,3 +1,4 @@
+.env
 __pycache__
 auth_pb2_grpc.py
 auth_pb2.py

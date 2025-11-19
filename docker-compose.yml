@@ -12,11 +12,13 @@ services:
       # En producción, solo NGINX necesitaría acceder a él.
       - "8001:8000" # Mapeo el 8001 del host al 8000 del contenedor para no chocar con el 80
       - "50051:50051" # API gRPC 
+    env_file:
+      - .env
     environment:
       # Pasamos variables de entorno a la aplicación
-      - DATABASE_URL=mongodb://mongo:27017/authdb
-      - SECRET_KEY=ESTA_ES_UNA_CLAVE_MUY_SECRETA_PARA_PROD_CAMBIAME
-      - RABBITMQ_URL=amqp://guest:guest@rabbitmq/
+      - DATABASE_URL=${DATABASE_URL}
+      - SECRET_KEY=${SECRET_KEY}
+      - RABBITMQ_URL=${RABBITMQ_URL}
     volumes:
       # Montar el código para desarrollo (hot-reloading si usas --reload)
       - ./auth-service:/app
@@ -103,6 +105,19 @@ services:
       - loki
     networks:
       - microservices-net
+
+# --- Gateway GraphQL (Req. 2.3) ---
+  graphql-gateway:
+    build:
+      context: ./graphql-gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8000" # Exponemos en 8002 para pruebas directas
+    depends_on:
+      - auth-service # Necesita que Auth esté vivo
+    networks:
+      - microservices-net
+
 
 # --- Volúmenes para persistencia de datos ---
 volumes:
