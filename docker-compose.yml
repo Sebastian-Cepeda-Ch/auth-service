@@ -11,15 +11,24 @@ services:
       # Exponemos el 8000 al host (ej: 8000:8000) solo para debug.
       # En producción, solo NGINX necesitaría acceder a él.
       - "8001:8000" # Mapeo el 8001 del host al 8000 del contenedor para no chocar con el 80
+      - "50051:50051" # API gRPC 
     environment:
       # Pasamos variables de entorno a la aplicación
       - DATABASE_URL=mongodb://mongo:27017/authdb
       - SECRET_KEY=ESTA_ES_UNA_CLAVE_MUY_SECRETA_PARA_PROD_CAMBIAME
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq/
     volumes:
       # Montar el código para desarrollo (hot-reloading si usas --reload)
       - ./auth-service:/app
     depends_on:
       - mongo # Asegura que la DB inicie primero
+      - rabbitmq 
+      - loki # Esperamos a que el sistema de logs inicie
+    # Ejecutamos el comando de compilación ANTES de iniciar el servidor.
+    # Esto asegura que los archivos existan siempre.
+    command: >
+      sh -c "python -m grpc_tools.protoc -I./protos --python_out=. --grpc_python_out=. ./protos/auth.proto &&
+             uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
     networks:
       - microservices-net
 
@@ -35,6 +44,15 @@ services:
     networks:
       - microservices-net
 
+  # --- RabbitMQ (Req. Entrega 3) ---
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"      # Puerto para comunicación entre apps
+      - "15672:15672"    # Puerto para la interfaz web de gestión
+    networks:
+      - microservices-net
+
   # --- Proxy Reverso NGINX (Requisito 2.5) ---
   nginx-proxy:
     image: nginx:latest
@@ -46,6 +64,43 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - auth-service # NGINX debe esperar a que el servicio de auth inicie
+    networks:
+      - microservices-net
+  # --- MONITOREO (Stack PLG - Requisito 3.4) ---
+  
+  # 1. Loki (Base de datos de Logs)
+  loki:
+    image: grafana/loki:2.9.0
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./monitoring/loki-config.yaml:/etc/loki/local-config.yaml
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - microservices-net
+
+  # 2. Promtail (Recolector de Logs)
+  promtail:
+    image: grafana/promtail:2.9.0
+    volumes:
+      - ./monitoring/promtail-config.yaml:/etc/promtail/config.yaml
+      # Montamos el socket de Docker para que Promtail pueda leer los logs de otros contenedores
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/config.yaml
+    depends_on:
+      - loki
+    networks:
+      - microservices-net
+
+  # 3. Grafana (Dashboard Visual)
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin # Contraseña inicial
+    depends_on:
+      - loki
     networks:
       - microservices-net
 
